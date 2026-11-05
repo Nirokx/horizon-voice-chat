@@ -1,6 +1,6 @@
-// Each client tick on a server: where the player and the other players are,
-// then the payloads the voice chat has for the server, its settings and its
-// chat lines.
+// Each client tick on a server: where the player and the other players are, then 
+// the payloads the voice chat has for the server, its settings and its chat lines.
+use crate::mod_api::generated_host::Host;
 fn voicechat_tick(game: &mut crate::game::Game<'_>) {
     use voicechat_engine as vc;
     let Some(r) = game.remote.as_ref() else {
@@ -15,7 +15,7 @@ fn voicechat_tick(game: &mut crate::game::Game<'_>) {
         .level_players
         .iter()
         .filter_map(|(&id, &uuid)| {
-            let [x, y, z] = crate::mod_api::generated_host::Host::entity_position(game, id)?;
+            let [x, y, z] = game.entity_position(id)?;
             Some((uuid, [x, y + vc::EYE_HEIGHT, z]))
         })
         .collect();
