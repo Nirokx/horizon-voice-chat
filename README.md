@@ -33,8 +33,9 @@ which one each server answered. On a 2.7 server the first visit may show "Your v
 is not compatible" once, before the 2.7 request succeeds. Settings > Protocol fixes the version if you
 prefer.
 
-It needs **libopus** (the `opus` package; already installed on most Linux desktops) and uses the
-default microphone and speakers.
+It needs **libopus**. On Linux it uses the system's (the `opus` package, already on most desktops);
+on Windows and macOS, where it is usually missing, the mod carries its own copy and loads that when the
+system has none. It uses the default microphone and speakers.
 
 ## Not affiliated
 
@@ -63,6 +64,10 @@ export PATH=$L/rust/1.99.1-x86_64-unknown-linux-gnu/bin:$PATH CARGO_HOME=$L/carg
 python3 tools/package.py --install        # target/voicechat-1.0.0.hnmod, copied into the launcher's native mods
 ```
 
+`package.py` downloads the bundled libopus for Windows, macOS and Linux (from MSYS2 and the Homebrew
+bottles, each pinned to a `sha256`) into `mixins/voicechat/data/` and packages them into the `.hnmod`.
+This needs network access and the `zstd` command the first time.
+
 Then build the game with its mods in the launcher. The mod is pinned to Horizon `c9d474d` because it
 reads the server's custom payloads and the other players' positions inside the game's multiplayer code
 (`game::remote`), which the stable hook points don't offer. A newer Nightly may need the pin in
@@ -78,7 +83,8 @@ reads the server's custom payloads and the other players' positions inside the g
   - `ui.rs`: the menu; `labels.rs`: group names above players; `lib.rs`: the session, keys, HUD, `/vc` and settings
 - `mixins/voicechat/*.rs`: one small hook adapter per hook point
 - `mixins/voicechat/horizon-mixin.toml`: where each hook goes
-- `tools/package.py`: makes the `.hnmod`
+- `mixins/voicechat/data/`: the bundled libopus per platform, fetched by `package.py` (not in git)
+- `tools/package.py`: fetches the bundled libopus and makes the `.hnmod`
 
 ## Tested
 
@@ -99,3 +105,7 @@ reads the server's custom payloads and the other players' positions inside the g
 MIT, see [LICENSE](LICENSE), for the parts that are this project's own work. Simple Voice Chat itself is
 not covered by this license and remains its author's, including whatever of its design the protocol
 code follows (see above).
+
+The bundled libopus binaries (fetched at build time, not part of this source) are Opus,
+© Xiph.Org Foundation, under the BSD-3-Clause license; its text is packaged beside them as
+`mixins/voicechat/data/opus-LICENSE`.

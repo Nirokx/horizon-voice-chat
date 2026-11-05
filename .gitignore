@@ -1,2 +1,5 @@
 /target
 Cargo.lock
+/mixins/voicechat/data/
+/mixins/voicechat/engine/target/
+.idea/

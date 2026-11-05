@@ -40,7 +40,15 @@ const NAMES: &[&str] = &[
     "/usr/local/lib/libopus.0.dylib",
     "opus.dll",
     "libopus-0.dll",
+    "libopus.dll",
+    "opus-0.dll",
 ];
+
+static BUNDLED: OnceLock<Option<(&'static str, &'static [u8])>> = OnceLock::new();
+
+pub fn register_bundled(lib: Option<(&'static str, &'static [u8])>) {
+    let _ = BUNDLED.set(lib);
+}
 
 fn api() -> Result<&'static Api, String> {
     static API: OnceLock<Result<Api, String>> = OnceLock::new();
@@ -56,7 +64,46 @@ fn load() -> Result<Api, String> {
             Err(e) => errors.push(e.to_string()),
         }
     }
-    Err(format!("libopus not found (install the opus package): {}", errors.join("; ")))
+    if let Some(Some((name, bytes))) = BUNDLED.get().copied() {
+        match load_bundled(name, bytes) {
+            Ok(api) => return Ok(api),
+            Err(e) => errors.push(format!("bundled {name}: {e}")),
+        }
+    }
+    Err(format!(
+        "libopus not found (install the opus package, or put a libopus beside the client): {}",
+        errors.join("; ")
+    ))
+}
+
+fn load_bundled(name: &str, bytes: &[u8]) -> Result<Api, String> {
+    let path = cache_lib(name, bytes).map_err(|e| e.to_string())?;
+    // SAFETY: libopus runs no code of its own when it loads.
+    let lib = unsafe { Library::new(&path) }.map_err(|e| e.to_string())?;
+    unsafe { symbols(lib) }.map_err(|e| e.to_string())
+}
+
+fn cache_lib(name: &str, bytes: &[u8]) -> std::io::Result<std::path::PathBuf> {
+    use std::io::Write;
+    let base = std::path::Path::new(name);
+    let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("libopus");
+    let versioned = match base.extension().and_then(|s| s.to_str()) {
+        Some(ext) => format!("{stem}-{}.{ext}", bytes.len()),
+        None => format!("{stem}-{}", bytes.len()),
+    };
+    let dir = std::env::temp_dir().join("horizon-voicechat");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(&versioned);
+    let stale = std::fs::metadata(&path).map(|m| m.len() != bytes.len() as u64).unwrap_or(true);
+    if stale {
+        let tmp = dir.join(format!("{versioned}.{}.tmp", std::process::id()));
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        drop(f);
+        std::fs::rename(&tmp, &path)?;
+    }
+    Ok(path)
 }
 
 unsafe fn symbols(lib: Library) -> Result<Api, libloading::Error> {
@@ -196,5 +243,16 @@ mod tests {
         let peak = last.iter().map(|s| s.unsigned_abs()).max().unwrap();
         assert!(peak > 4000, "peak {peak}");
         assert_eq!(dec.decode(None, false).len(), FRAME);
+    }
+
+    #[test]
+    fn bundled_cache_writes_and_reuses() {
+        let bytes = format!("opus-test-{}", std::process::id()).into_bytes();
+        let first = cache_lib("opus.dll", &bytes).unwrap();
+        assert_eq!(std::fs::read(&first).unwrap(), bytes);
+        assert_eq!(first.extension().and_then(|e| e.to_str()), Some("dll"));
+        let again = cache_lib("opus.dll", &bytes).unwrap();
+        assert_eq!(first, again);
+        let _ = std::fs::remove_file(&first);
     }
 }
