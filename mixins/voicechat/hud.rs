@@ -11,7 +11,7 @@ fn voicechat_hud(
     if !game.native_on(vc::ID) {
         return;
     }
-    if let Some((pos, yaw, pitch, fov)) = game.locator_camera {
+    if let Some((pos, yaw, pitch, fov)) = crate::game::remote::voicechat_world::camera(game) {
         let camera = vc::labels::Camera { pos, yaw, pitch, fov };
         for label in vc::group_labels(&camera, [batch.width, batch.height]) {
             let w = game.native_text_width(&label.text) + 4.0;

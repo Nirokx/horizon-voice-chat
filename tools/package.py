@@ -7,6 +7,7 @@ engine crate's included), with fixed dates and modes, so the same sources always
 """
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -14,7 +15,12 @@ import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-INSTALLED = Path.home() / '.local/share/horizon/horizon-native-mods'
+if sys.platform == 'win32':
+    INSTALLED = Path(os.environ['APPDATA']) / 'horizon' / 'horizon-native-mods'
+elif sys.platform == 'darwin':
+    INSTALLED = Path.home() / 'Library/Application Support/horizon/horizon-native-mods'
+else:
+    INSTALLED = Path.home() / '.local/share/horizon/horizon-native-mods'
 
 
 def package():
@@ -26,10 +32,11 @@ def package():
         raise SystemExit('horizon-mixin.toml and compatibility.json pin different Horizon revisions')
     if (bundle / 'engine' / 'Cargo.lock').exists():
         raise SystemExit('remove mixins/voicechat/engine/Cargo.lock: a mod crate builds on Horizon\'s lock')
-    # No `hooks`: the mod reads game fields beyond the native hook points, so it
-    # is pinned to the Horizon commit it was built and tested on.
+    # `hooks`: the native hook API it needs (client_packet 408, send_packet 409). The launcher
+    # builds it on any Horizon with that API or later; `horizon` is the commit it was tested on.
     manifest = dict(schema=1, id=mod['id'], version=mod['version'], game=compat['game'],
-                    horizon=compat['horizon_revision'], mixins=compat['horizon_mixins_revision'])
+                    horizon=compat['horizon_revision'], mixins=compat['horizon_mixins_revision'],
+                    hooks=compat['hooks'])
     files = {'horizon-native.json': (json.dumps(manifest, indent=2, sort_keys=True) + '\n').encode()}
     for path in sorted(bundle.rglob('*')):
         if path.is_file() and path.suffix in ('.rs', '.toml'):

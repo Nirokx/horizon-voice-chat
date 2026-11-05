@@ -1,34 +1,45 @@
 [mod]
 id = "voicechat"
-version = "1.0.0"
+version = "1.1.0"
 priority = 100
 
-# Pinned: besides the native hook points it reads the server's custom payloads
-# and the other players' positions inside the game's multiplayer code
-# (`game::remote`), which are not part of the stable hook points.
+# The commit it was tested on. It goes through the native hook points (hooks
+# 409 in compatibility.json: `client_packet` 408, `send_packet` 409), so the
+# launcher builds it on any Horizon that has them. Its one reach into the
+# game's own state is `world.rs` (the joined address, other players, camera).
 [compatibility]
-horizon_revision = "c9d474dd9116e84c243f8992d75c11314df56f06"
+horizon_revision = "f319701e8c9ab657ff562250b3ba07b2d654e3bc"
 
 # Simple Voice Chat's protocol, Opus, the sound card and the voice threads.
 [[crate]]
 id = "engine"
 path = "engine"
 
-# Every play packet, first: the voice chat's custom payloads.
+# The address, the other players and the camera (see world.rs).
+[[module]]
+id = "world"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "voicechat_world"
+source = "world.rs"
+visibility = "pub(crate)"
+
+# Every play packet from the server: the voice chat's custom payloads.
 [[injection]]
 id = "packet"
+hook = "client_packet"
+hook_version = 1
 kind = "HEAD"
-target = "horizon_client::game::remote::Game<'_>::handle_packet"
 helper = "packet.rs"
 bindings = [
-  { name = "packet", ty = "&horizon_protocol::packets::play::Clientbound", value = "&packet" },
+  { name = "packet", ty = "&horizon_protocol::packets::play::Clientbound", value = "packet" },
 ]
 
-# Each client tick on a server: positions in, payloads out.
+# Each tick of the window's game: positions in, payloads out.
 [[injection]]
 id = "tick"
+hook = "tick"
+hook_version = 1
 kind = "HEAD"
-target = "horizon_client::game::remote::Game<'_>::tick_remote"
 helper = "tick.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },

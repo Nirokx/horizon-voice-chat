@@ -1,6 +1,7 @@
 # Horizon Voice Chat
 
-A native Horizon mod (Minecraft 26.3, Horizon Nightly 2026-11-01, `c9d474d`) that is a client for
+A native Horizon mod (Minecraft 26.3, native hook API 409 and later; tested on Horizon Nightly
+2026-11-05, `f319701`) that is a client for
 the [Simple Voice Chat](https://github.com/henkelmax/simple-voice-chat) protocol. It uses the same
 protocol as the Java mod, so on any server with the voice chat mod or plugin you can talk with players
 who play on the regular Java launcher with Simple Voice Chat.
@@ -33,8 +34,11 @@ which one each server answered. On a 2.7 server the first visit may show "Your v
 is not compatible" once, before the 2.7 request succeeds. Settings > Protocol fixes the version if you
 prefer.
 
-It needs **libopus** (the `opus` package; already installed on most Linux desktops) and uses the
-default microphone and speakers.
+It needs **libopus** and uses the default microphone and speakers. It looks for libopus in its own data
+folder first (`horizon-mods/.horizon-mod-data/voicechat/`: `opus.dll` on Windows, `libopus.0.dylib`
+on macOS, `libopus.so.0` on Linux), then the system's (the `opus` package; already installed on most
+Linux desktops). Windows has no system libopus: build `opus.dll` with `tools/build_opus.py` (below) and
+put it in that folder.
 
 ## Not affiliated
 
@@ -60,13 +64,26 @@ Uses the Horizon launcher's own Rust and Horizon source (nothing else to install
 L=~/.local/share/horizon-launcher
 export PATH=$L/rust/1.99.1-x86_64-unknown-linux-gnu/bin:$PATH CARGO_HOME=$L/cargo
 (cd mixins/voicechat/engine && cargo test --offline && rm -f Cargo.lock)   # the engine's tests
-python3 tools/package.py --install        # target/voicechat-1.0.0.hnmod, copied into the launcher's native mods
+python3 tools/package.py --install        # target/voicechat-1.1.0.hnmod, copied into the launcher's native mods
 ```
 
-Then build the game with its mods in the launcher. The mod is pinned to Horizon `c9d474d` because it
-reads the server's custom payloads and the other players' positions inside the game's multiplayer code
-(`game::remote`), which the stable hook points don't offer. A newer Nightly may need the pin in
-`compatibility.json` and `mixins/voicechat/horizon-mixin.toml` moved.
+Then build the game with its mods in the launcher. The mod declares `"hooks": 409`: the server's
+payloads come through the `client_packet` hook point (API 408) and go out through `send_packet`
+(API 409), so the launcher builds it on any Horizon with that API. Its one reach into the game's own
+state is `mixins/voicechat/world.rs`, a module of `game::remote` that reads the joined address, the
+other players and the camera (the hook points don't offer those to a client yet); a Nightly that
+moves those fields breaks the build there and nowhere else.
+
+On Windows, `opus.dll` from the official libopus source with the launcher's own MinGW:
+
+```sh
+# opus-x.y.z from https://downloads.xiph.org/releases/opus/ (check SHA256SUMS.txt)
+python tools/build_opus.py <opus-x.y.z dir> "%APPDATA%/horizon-launcher/rust/<ver>-x86_64-pc-windows-gnu/mingw64/bin/gcc.exe" out
+# copy out/opus.dll (and out/COPYING.libopus) into horizon-mods/.horizon-mod-data/voicechat/
+```
+
+For tests without a microphone, `HORIZON_VOICECHAT_TEST_TONE=1` sends a steady 440 Hz tone instead of
+the microphone, and the log (`logs/latest.log`, lines `Voice Chat: …`) counts the packets sent and heard.
 
 ## Layout
 
@@ -91,6 +108,10 @@ reads the server's custom payloads and the other players' positions inside the g
   authenticated and connected to voice chat; one heard the other's voice (a test tone through
   Opus and the server); creating and joining groups, the member lists and the labels above players all
   came from the server.
+- 1.1.0 on Horizon `f319701` (and `main` at `63eccfc`): the bundle applies and the game builds; live
+  against Paper **1.21.11** (through Horizon's older-servers adapter) with the Simple Voice Chat
+  2.6.27 plugin, two Horizon clients connected to voice chat and one heard 1000+ sound packets of the
+  other's test tone, on Windows with the built `opus.dll`.
 - Not tested yet: the menu on screen in the real game, 2.7 servers live (no 2.7 plugin build is published), a real microphone and speakers
   in the game, and talking with the Java mod itself.
 

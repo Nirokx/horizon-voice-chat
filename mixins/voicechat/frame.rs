@@ -3,7 +3,7 @@
 // close the game did (Escape, another screen).
 fn voicechat_frame(game: &mut crate::game::Game<'_>) {
     use voicechat_engine as vc;
-    let on_server = game.remote.as_ref().is_some_and(|r| r.joined);
+    let on_server = crate::game::remote::voicechat_world::on_server(game);
     if !on_server || !game.native_on(vc::ID) {
         vc::tick(None, &|_| None);
     }

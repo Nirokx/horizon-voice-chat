@@ -155,6 +155,7 @@ fn run(
     let (game_host, _) = redirect(&server_host, server_port);
     let (host, port) = secret.voice_address(&game_host);
     let addr = resolve(&host, port)?;
+    log::info!(target: "horizon_voicechat", "Voice Chat: connecting to the voice server {addr}");
     let socket = UdpSocket::bind(if addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })
         .map_err(|e| format!("no UDP socket: {e}"))?;
     socket.connect(addr).map_err(|e| format!("voice server {addr}: {e}"))?;
@@ -183,6 +184,7 @@ fn run(
     let mut last_keep_alive = Instant::now();
     let mut channels: HashMap<u128, Channel> = HashMap::new();
     let mut buf = vec![0u8; 4096];
+    let mut heard: u64 = 0;
     let result = loop {
         if stop.load(Ordering::Relaxed) {
             break Ok(());
@@ -205,6 +207,7 @@ fn run(
         match packet {
             In::AuthenticateAck { nonce } => {
                 if !authenticated {
+                    log::info!(target: "horizon_voicechat", "Voice Chat: authenticated");
                     authenticated = true;
                     *link.nonce.lock().unwrap() = nonce;
                     last_try = None;
@@ -212,6 +215,7 @@ fn run(
             }
             In::ConnectionCheckAck => {
                 if authenticated && !connected.swap(true, Ordering::Relaxed) {
+                    log::info!(target: "horizon_voicechat", "Voice Chat: connected");
                     shared.set_status(Status::Connected);
                     last_keep_alive = now;
                 }
@@ -222,6 +226,10 @@ fn run(
             }
             In::Ping { id, timestamp } => send(&Out::Ping { id, timestamp }),
             In::Sound(sound) => {
+                heard += 1;
+                if heard == 1 || heard % 250 == 0 {
+                    log::info!(target: "horizon_voicechat", "Voice Chat: {heard} sound packets heard");
+                }
                 if !shared.controls.lock().unwrap().disabled {
                     play(sound, own, shared, mixer, &mut channels);
                 }
@@ -229,6 +237,9 @@ fn run(
         }
         channels.retain(|_, c| now - c.used < Duration::from_secs(30));
     };
+    if let Err(e) = &result {
+        log::warn!(target: "horizon_voicechat", "Voice Chat: the voice connection ended: {e}");
+    }
     connected.store(false, Ordering::Relaxed);
     quit.store(true, Ordering::Relaxed);
     if let Some(t) = mic_thread {
@@ -335,8 +346,24 @@ fn mic_loop(socket: &UdpSocket, link: &Link, shared: &Shared, mic: &MicQueue, st
     let send = |p: &Out| {
         let _ = socket.send(&link.write(p));
     };
+    // For testing without a microphone: a steady 440 Hz tone, always sent.
+    let tone = std::env::var_os("HORIZON_VOICECHAT_TEST_TONE").is_some();
+    if tone {
+        log::warn!(target: "horizon_voicechat", "Voice Chat: HORIZON_VOICECHAT_TEST_TONE is set, sending a test tone");
+    }
+    let mut tone_at: u64 = 0;
+    let mut sent: u64 = 0;
     while !stop.load(Ordering::Relaxed) {
-        let frame: Vec<f32> = {
+        let frame: Vec<f32> = if tone {
+            std::thread::sleep(Duration::from_millis(20));
+            (0..FRAME)
+                .map(|_| {
+                    tone_at += 1;
+                    let t = tone_at as f32 / crate::opus::SAMPLE_RATE as f32;
+                    (t * 440.0 * std::f32::consts::TAU).sin() * 0.25
+                })
+                .collect()
+        } else {
             let mut q = mic.samples.lock().unwrap();
             if q.len() < FRAME {
                 q = mic.ready.wait_timeout(q, Duration::from_millis(100)).unwrap().0;
@@ -359,10 +386,11 @@ fn mic_loop(socket: &UdpSocket, link: &Link, shared: &Shared, mic: &MicQueue, st
 
         let can = connected.load(Ordering::Relaxed) && !c.muted && !c.disabled;
         let mut talk = can
-            && match c.mode {
-                Mode::PushToTalk => c.ptt || c.whisper,
-                Mode::Voice => db > c.threshold_db,
-            };
+            && (tone
+                || match c.mode {
+                    Mode::PushToTalk => c.ptt || c.whisper,
+                    Mode::Voice => db > c.threshold_db,
+                });
         if talk {
             hold = if c.mode == Mode::PushToTalk { 5 } else { 25 };
         } else if can && hold > 0 {
@@ -374,6 +402,10 @@ fn mic_loop(socket: &UdpSocket, link: &Link, shared: &Shared, mic: &MicQueue, st
                 send(&Out::Mic { data, sequence, whispering: c.whisper });
                 sequence += 1;
                 sending = true;
+                sent += 1;
+                if sent == 1 || sent % 250 == 0 {
+                    log::info!(target: "horizon_voicechat", "Voice Chat: {sent} microphone packets sent");
+                }
             }
         } else if sending {
             send(&Out::Mic { data: Vec::new(), sequence, whispering: false });

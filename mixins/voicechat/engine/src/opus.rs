@@ -1,8 +1,29 @@
-//! Opus from the system's libopus, loaded when voice chat first starts: 48 kHz
-//! mono, 20 ms frames, as Simple Voice Chat codes them.
+//! Opus from libopus, loaded when voice chat first starts: 48 kHz mono, 20 ms
+//! frames, as Simple Voice Chat codes them. The mod's own folder is tried first
+//! (`horizon-mods/.horizon-mod-data/voicechat/opus.dll`, which the installer puts
+//! there on Windows, where no system libopus exists), then the system's.
 use libloading::Library;
 use std::ffi::{c_int, c_void};
+use std::path::PathBuf;
 use std::sync::OnceLock;
+
+/// The mod's data folder, set by the game before the first load.
+static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Where the game keeps this mod's files (`Game::native_data_dir`). Only the
+/// first call counts; call it before voice chat starts.
+pub fn set_data_dir(dir: PathBuf) {
+    let _ = DATA_DIR.set(dir);
+}
+
+/// The library file names libopus has, in this platform's order.
+const LOCAL: &[&str] = if cfg!(windows) {
+    &["opus.dll", "libopus-0.dll"]
+} else if cfg!(target_os = "macos") {
+    &["libopus.0.dylib", "libopus.dylib"]
+} else {
+    &["libopus.so.0", "libopus.so"]
+};
 
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const FRAME: usize = 960;
@@ -49,14 +70,27 @@ fn api() -> Result<&'static Api, String> {
 
 fn load() -> Result<Api, String> {
     let mut errors = Vec::new();
-    for name in NAMES {
+    let local = DATA_DIR
+        .get()
+        .into_iter()
+        .flat_map(|dir| LOCAL.iter().map(move |name| dir.join(name)))
+        .filter(|path| path.is_file());
+    let candidates = local.chain(NAMES.iter().map(PathBuf::from));
+    for path in candidates {
         // SAFETY: libopus runs no code of its own when it loads.
-        match unsafe { Library::new(name) } {
-            Ok(lib) => return unsafe { symbols(lib) }.map_err(|e| format!("{name}: {e}")),
-            Err(e) => errors.push(e.to_string()),
+        match unsafe { Library::new(&path) } {
+            Ok(lib) => {
+                return unsafe { symbols(lib) }.map_err(|e| format!("{}: {e}", path.display()));
+            }
+            Err(e) => errors.push(format!("{}: {e}", path.display())),
         }
     }
-    Err(format!("libopus not found (install the opus package): {}", errors.join("; ")))
+    let hint = if cfg!(windows) {
+        "put opus.dll in horizon-mods/.horizon-mod-data/voicechat/ (the installer does)"
+    } else {
+        "install the opus package"
+    };
+    Err(format!("libopus not found ({hint}): {}", errors.join("; ")))
 }
 
 unsafe fn symbols(lib: Library) -> Result<Api, libloading::Error> {
@@ -177,6 +211,10 @@ mod tests {
 
     #[test]
     fn a_tone_survives_encoding() {
+        // A folder holding a built opus.dll stands in for the mod's data folder.
+        if let Some(dir) = std::env::var_os("VOICECHAT_TEST_OPUS_DIR") {
+            set_data_dir(dir.into());
+        }
         if check().is_err() {
             eprintln!("no libopus here: skipped");
             return;
