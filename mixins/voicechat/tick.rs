@@ -15,7 +15,7 @@ fn voicechat_tick(game: &mut crate::game::Game<'_>) {
         .level_players
         .iter()
         .filter_map(|(&id, &uuid)| {
-            let [x, y, z] = game.remote_entity_position(id)?;
+            let [x, y, z] = game.entity_position(id)?;
             Some((uuid, [x, y + vc::EYE_HEIGHT, z]))
         })
         .collect();
