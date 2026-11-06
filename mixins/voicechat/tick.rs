@@ -3,9 +3,7 @@
 
 fn voicechat_tick(game: &mut crate::game::Game<'_>) {
     use voicechat_engine as vc;
-    let Some(r) = game.remote.as_ref() else {
-        return;
-    };
+    let Some(r) = game.remote.as_ref() else { return; };
     if !game.native_on(vc::ID) || !r.joined || r.reconfiguring.is_some() {
         vc::tick(None, &|_| None);
         return;
@@ -15,7 +13,7 @@ fn voicechat_tick(game: &mut crate::game::Game<'_>) {
         .level_players
         .iter()
         .filter_map(|(&id, &uuid)| {
-            let [x, y, z] = crate::mod_api::generated_host::Host::entity_position(game, id)?;
+            let Some((_, [x, y, z])) = r.tracked_entity(id) else { return None; };
             Some((uuid, [x, y + vc::EYE_HEIGHT, z]))
         })
         .collect();
@@ -38,10 +36,6 @@ fn voicechat_tick(game: &mut crate::game::Game<'_>) {
             horizon_protocol::packets::configuration::CustomPayload { channel, data },
         ));
     }
-    for (key, value) in done.store {
-        game.native_set_setting(vc::ID, &key, &value);
-    }
-    for line in done.chat {
-        game.native_chat(&line);
-    }
+    for (key, value) in done.store { game.native_set_setting(vc::ID, &key, &value); }
+    for line in done.chat { game.native_chat(&line); }
 }
