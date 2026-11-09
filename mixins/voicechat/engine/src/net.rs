@@ -76,6 +76,12 @@ pub struct Shared {
     /// The microphone's last peak, dB as f32 bits.
     pub mic_level: AtomicU32,
     pub transmitting: AtomicBool,
+    /// Where the voice goes, for the status line.
+    pub voice_target: Mutex<String>,
+    /// While connecting: tries sent, datagrams back, and those unreadable.
+    pub tries: AtomicU32,
+    pub received: AtomicU32,
+    pub unreadable: AtomicU32,
 }
 
 impl Shared {
@@ -155,6 +161,10 @@ fn run(
     let (game_host, _) = redirect(&server_host, server_port);
     let (host, port) = secret.voice_address(&game_host);
     let addr = resolve(&host, port)?;
+    *shared.voice_target.lock().unwrap() = addr.to_string();
+    for count in [&shared.tries, &shared.received, &shared.unreadable] {
+        count.store(0, Ordering::Relaxed);
+    }
     let socket = UdpSocket::bind(if addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })
         .map_err(|e| format!("no UDP socket: {e}"))?;
     socket.connect(addr).map_err(|e| format!("voice server {addr}: {e}"))?;
@@ -191,6 +201,7 @@ fn run(
         if !connected.load(Ordering::Relaxed) {
             if last_try.is_none_or(|t| now - t >= Duration::from_secs(1)) {
                 last_try = Some(now);
+                shared.tries.fetch_add(1, Ordering::Relaxed);
                 send(if authenticated { &Out::ConnectionCheck } else { &Out::Authenticate });
             }
         } else if now - last_keep_alive > keep_alive {
@@ -201,7 +212,11 @@ fn run(
             // Timeouts, and ICMP's "unreachable" until the server is up.
             Err(_) => continue,
         };
-        let Ok(Some(packet)) = link.read(&buf[..n]) else { continue };
+        shared.received.fetch_add(1, Ordering::Relaxed);
+        let Ok(Some(packet)) = link.read(&buf[..n]) else {
+            shared.unreadable.fetch_add(1, Ordering::Relaxed);
+            continue;
+        };
         match packet {
             In::AuthenticateAck { nonce } => {
                 if !authenticated {

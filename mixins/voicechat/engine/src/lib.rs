@@ -255,15 +255,17 @@ impl Session {
         self.secret.as_ref().map_or(COMPAT_26, |s| s.compat)
     }
 
-    /// The versions to ask, in order: the one that answered here before, then
-    /// the releases', then 2.7's, twice over for a server still starting.
+    /// The versions to ask, in order, three times for a server still starting.
+    /// Only one version: a server may kick a client that asks with one it
+    /// doesn't speak. Automatic uses the one that answered here before, else
+    /// the releases'.
     fn plan(&self, protocol: Protocol) -> Vec<i32> {
         match protocol {
             Protocol::V26 => vec![COMPAT_26, COMPAT_26, COMPAT_26],
             Protocol::V27 => vec![COMPAT_27, COMPAT_27, COMPAT_27],
             Protocol::Auto => match self.remembered {
-                Some(COMPAT_27) => vec![COMPAT_27, COMPAT_26, COMPAT_27, COMPAT_26],
-                _ => vec![COMPAT_26, COMPAT_27, COMPAT_26, COMPAT_27],
+                Some(COMPAT_27) => vec![COMPAT_27, COMPAT_27, COMPAT_27],
+                _ => vec![COMPAT_26, COMPAT_26, COMPAT_26],
             },
         }
     }
@@ -591,6 +593,20 @@ impl Voice {
         }
     }
 
+    /// Where the voice is going and what has come back, to tell a blocked
+    /// port from packets this client can't read.
+    fn connecting_line(&self) -> String {
+        let shared = &self.shared;
+        let target = shared.voice_target.lock().unwrap();
+        let count = |c: &std::sync::atomic::AtomicU32| c.load(std::sync::atomic::Ordering::Relaxed);
+        format!(
+            "Connecting to {target}: sent {}, got {}, unreadable {}",
+            count(&shared.tries),
+            count(&shared.received),
+            count(&shared.unreadable),
+        )
+    }
+
     fn status_line(&self) -> (String, u32) {
         let Some(s) = self.session.as_ref() else {
             return ("Not on a server".into(), GREY);
@@ -603,7 +619,7 @@ impl Voice {
                 match &*self.shared.status.lock().unwrap() {
                     Status::Connected => (format!("Connected (protocol {version})"), GREEN),
                     Status::Failed(e) => (e.clone(), RED),
-                    _ => ("Connecting...".into(), YELLOW),
+                    _ => (self.connecting_line(), YELLOW),
                 }
             }
         }
@@ -1123,7 +1139,7 @@ mod tests {
     static SERIAL: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn asks_for_the_secret_with_both_versions() {
+    fn asks_for_the_secret_with_one_version() {
         let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let none = |_: &str| None;
         let t = tick(Some(world("play.example.net")), &none);
@@ -1134,7 +1150,7 @@ mod tests {
         assert_eq!(t.payloads, vec![("voicechat:request_secret".into(), 20i32.to_be_bytes().to_vec())]);
         voice().session.as_mut().unwrap().next_ask = Instant::now();
         let t = tick(Some(world("play.example.net")), &none);
-        assert_eq!(t.payloads[0].1, 21i32.to_be_bytes().to_vec());
+        assert_eq!(t.payloads[0].1, 20i32.to_be_bytes().to_vec());
         assert!(!payload("minecraft:brand", b""));
         let t = tick(None, &none);
         assert!(t.payloads.is_empty());

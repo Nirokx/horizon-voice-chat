@@ -1,6 +1,6 @@
 # Horizon Voice Chat
 
-A native Horizon mod (Minecraft 26.3, Horizon Nightly 2026-11-01, `c9d474d`) that is a client for
+A native Horizon mod (Minecraft 26.3, Horizon Nightly 2026-11-08, `fdc87ae`) that is a client for
 the [Simple Voice Chat](https://github.com/henkelmax/simple-voice-chat) protocol. It uses the same
 protocol as the Java mod, so on any server with the voice chat mod or plugin you can talk with players
 who play on the regular Java launcher with Simple Voice Chat.
@@ -28,10 +28,8 @@ who play on the regular Java launcher with Simple Voice Chat.
   level, protocol, status on screen, group names above players.
 
 Both Simple Voice Chat protocols are supported: **2.6.x** (compatibility version 20, the current
-releases) and **2.7** (21, the pre-release). The mod asks with 2.6.x first and then 2.7, and remembers
-which one each server answered. On a 2.7 server the first visit may show "Your voice chat client version
-is not compatible" once, before the 2.7 request succeeds. Settings > Protocol fixes the version if you
-prefer.
+releases) and **2.7** (21, the pre-release). Automatic asks with 2.6.x only, because a server can kick a
+client that asks with a version it doesn't speak. For a 2.7 server, set Settings > Protocol to 2.7.
 
 It needs **libopus** (the `opus` package; already installed on most Linux desktops) and uses the
 default microphone and speakers.
@@ -60,10 +58,10 @@ Uses the Horizon launcher's own Rust and Horizon source (nothing else to install
 L=~/.local/share/horizon-launcher
 export PATH=$L/rust/1.99.1-x86_64-unknown-linux-gnu/bin:$PATH CARGO_HOME=$L/cargo
 (cd mixins/voicechat/engine && cargo test --offline && rm -f Cargo.lock)   # the engine's tests
-python3 tools/package.py --install        # target/voicechat-1.0.0.hnmod, copied into the launcher's native mods
+python3 tools/package.py --install        # target/voicechat-1.0.1.hnmod, copied into the launcher's native mods
 ```
 
-Then build the game with its mods in the launcher. The mod is pinned to Horizon `c9d474d` because it
+Then build the game with its mods in the launcher. The mod is pinned to Horizon `fdc87ae` because it
 reads the server's custom payloads and the other players' positions inside the game's multiplayer code
 (`game::remote`), which the stable hook points don't offer. A newer Nightly may need the pin in
 `compatibility.json` and `mixins/voicechat/horizon-mixin.toml` moved.
@@ -85,7 +83,7 @@ reads the server's custom payloads and the other players' positions inside the g
 - Engine unit tests: the packet formats of both versions, the AES-GCM test vector, Opus through the
   system libopus, the mixer, distance and panning, the session, the group display, and the menu
   (hotkeys and groups shown, joining a password group, typing a new group).
-- The bundle applies to Horizon `c9d474d` with horizon-mixins 0.6.0, and the modded client
+- The bundle applies to Horizon `fdc87ae` with horizon-mixins 0.6.0, and the modded client
   type-checks (`cargo check -p horizon-client`).
 - Live, against Paper 26.3 with the Simple Voice Chat 2.6.27 plugin: two clients driven by this engine
   authenticated and connected to voice chat; one heard the other's voice (a test tone through
