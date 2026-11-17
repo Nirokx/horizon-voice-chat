@@ -11,7 +11,7 @@ pub const APPLICATION_AUDIO: i32 = 2049;
 pub const APPLICATION_RESTRICTED_LOWDELAY: i32 = 2051;
 const OPUS_RESET_STATE: c_int = 4028;
 
-extern "C" {
+unsafe extern "C" {
     fn opus_encoder_create(fs: c_int, channels: c_int, application: c_int, error: *mut c_int)
         -> *mut c_void;
     fn opus_encode(
