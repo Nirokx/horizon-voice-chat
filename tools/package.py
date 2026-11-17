@@ -2,7 +2,8 @@
 """Package the mod as a source-only `.hnmod`, the file Horizon's launcher installs and builds.
 
 The archive holds `horizon-native.json` and `mixins/voicechat/` (its `.rs` and `.toml` files, the
-engine crate's included), with fixed dates and modes, so the same sources always give the same bytes.
+engine crate's included, and the vendored libopus C sources under `mixins/voicechat/engine/data/opus/`),
+with fixed dates and modes, so the same sources always give the same bytes.
 `--install` also copies it into the launcher's native mods folder.
 """
 import hashlib
@@ -32,7 +33,9 @@ def package():
                     horizon=compat['horizon_revision'], mixins=compat['horizon_mixins_revision'])
     files = {'horizon-native.json': (json.dumps(manifest, indent=2, sort_keys=True) + '\n').encode()}
     for path in sorted(bundle.rglob('*')):
-        if path.is_file() and path.suffix in ('.rs', '.toml'):
+        if path.is_file() and (
+            path.suffix in ('.rs', '.toml', '.c', '.h') or path.name in ('COPYING', 'README.md')
+        ):
             files[path.relative_to(ROOT).as_posix()] = path.read_bytes()
     out = ROOT / 'target' / f"{mod['id']}-{mod['version']}.hnmod"
     out.parent.mkdir(parents=True, exist_ok=True)

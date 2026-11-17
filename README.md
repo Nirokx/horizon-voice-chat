@@ -31,7 +31,8 @@ Both Simple Voice Chat protocols are supported: **2.6.x** (compatibility version
 releases) and **2.7** (21, the pre-release). Automatic asks with 2.6.x only, because a server can kick a
 client that asks with a version it doesn't speak. For a 2.7 server, set Settings > Protocol to 2.7.
 
-It needs **libopus** (the `opus` package; already installed on most Linux desktops) and uses the
+Opus is bundled with the mod (libopus 1.5.2, compiled in from `mixins/voicechat/engine/data/opus/`),
+so voice chat works on Android too, with no package to install. It uses the
 default microphone and speakers.
 
 ## Not affiliated
@@ -58,7 +59,7 @@ Uses the Horizon launcher's own Rust and Horizon source (nothing else to install
 L=~/.local/share/horizon-launcher
 export PATH=$L/rust/1.99.1-x86_64-unknown-linux-gnu/bin:$PATH CARGO_HOME=$L/cargo
 (cd mixins/voicechat/engine && cargo test --offline && rm -f Cargo.lock)   # the engine's tests
-python3 tools/package.py --install        # target/voicechat-1.0.1.hnmod, copied into the launcher's native mods
+python3 tools/package.py --install        # target/voicechat-1.0.2.hnmod, copied into the launcher's native mods
 ```
 
 Then build the game with its mods in the launcher. The mod is pinned to Horizon `fdc87ae` because it
@@ -70,7 +71,8 @@ reads the server's custom payloads and the other players' positions inside the g
 
 - `mixins/voicechat/engine/`: the mod's own crate (built once and cached), with its unit tests
   - `proto.rs`: Simple Voice Chat's packets, both versions; `buf.rs`: `FriendlyByteBuf`
-  - `crypt.rs`: AES-128-GCM, as `Secret` encrypts; `opus.rs`: libopus, loaded at run time
+  - `crypt.rs`: AES-128-GCM, as `Secret` encrypts; `opus.rs`: Opus, statically linked from the vendored libopus in `data/opus/`; `build.rs`: compiles that libopus
+  - `data/opus/`: the vendored libopus 1.5.2 C sources (BSD, see `data/opus/COPYING`)
   - `net.rs`: the UDP connection (authenticate, check, keep alive) and the mic thread
   - `mix.rs`: jitter buffers, distance and panning, resampling; `audio.rs`: microphone and speakers (cpal)
   - `ui.rs`: the menu; `labels.rs`: group names above players; `lib.rs`: the session, keys, HUD, `/vc` and settings
@@ -81,7 +83,7 @@ reads the server's custom payloads and the other players' positions inside the g
 ## Tested
 
 - Engine unit tests: the packet formats of both versions, the AES-GCM test vector, Opus through the
-  system libopus, the mixer, distance and panning, the session, the group display, and the menu
+  bundled libopus, the mixer, distance and panning, the session, the group display, and the menu
   (hotkeys and groups shown, joining a password group, typing a new group).
 - The bundle applies to Horizon `fdc87ae` with horizon-mixins 0.6.0, and the modded client
   type-checks (`cargo check -p horizon-client`).
@@ -96,4 +98,5 @@ reads the server's custom payloads and the other players' positions inside the g
 
 MIT, see [LICENSE](LICENSE), for the parts that are this project's own work. Simple Voice Chat itself is
 not covered by this license and remains its author's, including whatever of its design the protocol
-code follows (see above).
+code follows (see above). The vendored libopus in `mixins/voicechat/engine/data/opus/` is BSD-licensed,
+see `mixins/voicechat/engine/data/opus/COPYING`.

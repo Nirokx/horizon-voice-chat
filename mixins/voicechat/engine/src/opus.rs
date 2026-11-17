@@ -1,8 +1,7 @@
-//! Opus from the system's libopus, loaded when voice chat first starts: 48 kHz
-//! mono, 20 ms frames, as Simple Voice Chat codes them.
-use libloading::Library;
+//! Opus, statically linked from the vendored libopus in `opus/` (see
+//! `opus/README.md`): 48 kHz mono, 20 ms frames, as Simple Voice Chat codes
+//! them. No system libopus is needed, so voice chat also works on Android.
 use std::ffi::{c_int, c_void};
-use std::sync::OnceLock;
 
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const FRAME: usize = 960;
@@ -12,76 +11,39 @@ pub const APPLICATION_AUDIO: i32 = 2049;
 pub const APPLICATION_RESTRICTED_LOWDELAY: i32 = 2051;
 const OPUS_RESET_STATE: c_int = 4028;
 
-type EncoderCreate = unsafe extern "C" fn(i32, c_int, c_int, *mut c_int) -> *mut c_void;
-type Encode = unsafe extern "C" fn(*mut c_void, *const i16, c_int, *mut u8, i32) -> i32;
-type DecoderCreate = unsafe extern "C" fn(i32, c_int, *mut c_int) -> *mut c_void;
-type Decode = unsafe extern "C" fn(*mut c_void, *const u8, i32, *mut i16, c_int, c_int) -> c_int;
-type Destroy = unsafe extern "C" fn(*mut c_void);
-type Ctl = unsafe extern "C" fn(*mut c_void, c_int, ...) -> c_int;
-
-struct Api {
-    _lib: Library,
-    encoder_create: EncoderCreate,
-    encode: Encode,
-    encoder_destroy: Destroy,
-    encoder_ctl: Ctl,
-    decoder_create: DecoderCreate,
-    decode: Decode,
-    decoder_destroy: Destroy,
-    decoder_ctl: Ctl,
+unsafe extern "C" {
+    fn opus_encoder_create(fs: c_int, channels: c_int, application: c_int, error: *mut c_int)
+        -> *mut c_void;
+    fn opus_encode(
+        st: *mut c_void,
+        pcm: *const i16,
+        frame_size: c_int,
+        data: *mut u8,
+        max_data_bytes: i32,
+    ) -> i32;
+    fn opus_encoder_destroy(st: *mut c_void);
+    fn opus_encoder_ctl(st: *mut c_void, request: c_int, ...) -> c_int;
+    fn opus_decoder_create(fs: c_int, channels: c_int, error: *mut c_int) -> *mut c_void;
+    fn opus_decode(
+        st: *mut c_void,
+        data: *const u8,
+        len: i32,
+        pcm: *mut i16,
+        frame_size: c_int,
+        decode_fec: c_int,
+    ) -> c_int;
+    fn opus_decoder_destroy(st: *mut c_void);
+    fn opus_decoder_ctl(st: *mut c_void, request: c_int, ...) -> c_int;
 }
 
-const NAMES: &[&str] = &[
-    "libopus.so.0",
-    "libopus.so",
-    "libopus.0.dylib",
-    "libopus.dylib",
-    "/opt/homebrew/lib/libopus.0.dylib",
-    "/usr/local/lib/libopus.0.dylib",
-    "opus.dll",
-    "libopus-0.dll",
-];
-
-fn api() -> Result<&'static Api, String> {
-    static API: OnceLock<Result<Api, String>> = OnceLock::new();
-    API.get_or_init(load).as_ref().map_err(Clone::clone)
-}
-
-fn load() -> Result<Api, String> {
-    let mut errors = Vec::new();
-    for name in NAMES {
-        // SAFETY: libopus runs no code of its own when it loads.
-        match unsafe { Library::new(name) } {
-            Ok(lib) => return unsafe { symbols(lib) }.map_err(|e| format!("{name}: {e}")),
-            Err(e) => errors.push(e.to_string()),
-        }
-    }
-    Err(format!("libopus not found (install the opus package): {}", errors.join("; ")))
-}
-
-unsafe fn symbols(lib: Library) -> Result<Api, libloading::Error> {
-    unsafe {
-        Ok(Api {
-            encoder_create: *lib.get(b"opus_encoder_create\0")?,
-            encode: *lib.get(b"opus_encode\0")?,
-            encoder_destroy: *lib.get(b"opus_encoder_destroy\0")?,
-            encoder_ctl: *lib.get(b"opus_encoder_ctl\0")?,
-            decoder_create: *lib.get(b"opus_decoder_create\0")?,
-            decode: *lib.get(b"opus_decode\0")?,
-            decoder_destroy: *lib.get(b"opus_decoder_destroy\0")?,
-            decoder_ctl: *lib.get(b"opus_decoder_ctl\0")?,
-            _lib: lib,
-        })
-    }
-}
-
-/// Whether libopus loads, and why not.
+/// Whether Opus works: make an encoder and a decoder and drop them.
 pub fn check() -> Result<(), String> {
-    api().map(|_| ())
+    let _enc = Encoder::new(APPLICATION_VOIP, 1275)?;
+    let _dec = Decoder::new()?;
+    Ok(())
 }
 
 pub struct Encoder {
-    api: &'static Api,
     raw: *mut c_void,
     max_bytes: usize,
 }
@@ -92,20 +54,17 @@ unsafe impl Send for Encoder {}
 impl Encoder {
     /// `max_bytes`: the server's MTU, Opus's 1275 at most.
     pub fn new(application: i32, max_bytes: usize) -> Result<Self, String> {
-        let api = api()?;
         let mut err = 0;
-        let raw = unsafe { (api.encoder_create)(SAMPLE_RATE as i32, 1, application, &mut err) };
+        let raw = unsafe { opus_encoder_create(SAMPLE_RATE as i32, 1, application, &mut err) };
         if raw.is_null() || err != 0 {
             return Err(format!("opus_encoder_create failed ({err})"));
         }
-        Ok(Self { api, raw, max_bytes: max_bytes.clamp(64, 1275) })
+        Ok(Self { raw, max_bytes: max_bytes.clamp(64, 1275) })
     }
 
     pub fn encode(&mut self, frame: &[i16; FRAME]) -> Result<Vec<u8>, String> {
         let mut out = vec![0u8; self.max_bytes];
-        let n = unsafe {
-            (self.api.encode)(self.raw, frame.as_ptr(), FRAME as c_int, out.as_mut_ptr(), out.len() as i32)
-        };
+        let n = unsafe { opus_encode(self.raw, frame.as_ptr(), FRAME as c_int, out.as_mut_ptr(), out.len() as i32) };
         if n < 0 {
             return Err(format!("opus_encode failed ({n})"));
         }
@@ -114,18 +73,17 @@ impl Encoder {
     }
 
     pub fn reset(&mut self) {
-        unsafe { (self.api.encoder_ctl)(self.raw, OPUS_RESET_STATE) };
+        unsafe { opus_encoder_ctl(self.raw, OPUS_RESET_STATE) };
     }
 }
 
 impl Drop for Encoder {
     fn drop(&mut self) {
-        unsafe { (self.api.encoder_destroy)(self.raw) };
+        unsafe { opus_encoder_destroy(self.raw) };
     }
 }
 
 pub struct Decoder {
-    api: &'static Api,
     raw: *mut c_void,
 }
 
@@ -134,13 +92,12 @@ unsafe impl Send for Decoder {}
 
 impl Decoder {
     pub fn new() -> Result<Self, String> {
-        let api = api()?;
         let mut err = 0;
-        let raw = unsafe { (api.decoder_create)(SAMPLE_RATE as i32, 1, &mut err) };
+        let raw = unsafe { opus_decoder_create(SAMPLE_RATE as i32, 1, &mut err) };
         if raw.is_null() || err != 0 {
             return Err(format!("opus_decoder_create failed ({err})"));
         }
-        Ok(Self { api, raw })
+        Ok(Self { raw })
     }
 
     /// A frame from `packet`; None conceals a lost one, and `fec` rebuilds
@@ -148,9 +105,7 @@ impl Decoder {
     pub fn decode(&mut self, packet: Option<&[u8]>, fec: bool) -> Vec<i16> {
         let mut pcm = vec![0i16; FRAME];
         let (ptr, len) = packet.map_or((std::ptr::null(), 0), |p| (p.as_ptr(), p.len() as i32));
-        let n = unsafe {
-            (self.api.decode)(self.raw, ptr, len, pcm.as_mut_ptr(), FRAME as c_int, fec as c_int)
-        };
+        let n = unsafe { opus_decode(self.raw, ptr, len, pcm.as_mut_ptr(), FRAME as c_int, fec as c_int) };
         if n < 0 {
             pcm.fill(0);
         } else {
@@ -161,13 +116,13 @@ impl Decoder {
     }
 
     pub fn reset(&mut self) {
-        unsafe { (self.api.decoder_ctl)(self.raw, OPUS_RESET_STATE) };
+        unsafe { opus_decoder_ctl(self.raw, OPUS_RESET_STATE) };
     }
 }
 
 impl Drop for Decoder {
     fn drop(&mut self) {
-        unsafe { (self.api.decoder_destroy)(self.raw) };
+        unsafe { opus_decoder_destroy(self.raw) };
     }
 }
 
@@ -177,10 +132,6 @@ mod tests {
 
     #[test]
     fn a_tone_survives_encoding() {
-        if check().is_err() {
-            eprintln!("no libopus here: skipped");
-            return;
-        }
         let mut enc = Encoder::new(APPLICATION_VOIP, 1275).unwrap();
         let mut dec = Decoder::new().unwrap();
         let mut last = Vec::new();
