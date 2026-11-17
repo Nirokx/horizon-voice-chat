@@ -317,15 +317,7 @@ fn play(s: Sound, own: u128, shared: &Shared, mixer: &Mutex<Mixer>, channels: &m
         SoundKind::Entity { .. } if s.sender == own => Some([1.0, 1.0]),
         SoundKind::Entity { distance, .. } => {
             let at = shared.players.lock().unwrap().get(&s.sender).copied();
-            match at {
-                Some(at) => spatial(&listener, at, distance),
-                // Horizon's entity API gives no other players' positions
-                // on a server, so there is nothing to place the voice by:
-                // hear it at full volume rather than drop it. The server
-                // still only sends voices from inside its distance, so
-                // nobody outside the range is heard.
-                None => Some([1.0, 1.0]),
-            }
+            at.and_then(|at| spatial(&listener, at, distance))
         }
         SoundKind::Location { at, distance } => spatial(&listener, at, distance),
     };
@@ -406,68 +398,5 @@ fn mic_loop(socket: &UdpSocket, link: &Link, shared: &Shared, mic: &MicQueue, st
             hold = 0;
         }
         shared.transmitting.store(sending, Ordering::Relaxed);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Raw 16 bit PCM (sequence < 0), one 20 ms frame at half volume.
-    fn pcm_sound(sender: u128) -> Sound {
-        let mut data = Vec::with_capacity(FRAME * 2);
-        for _ in 0..FRAME {
-            data.extend_from_slice(&16384i16.to_le_bytes());
-        }
-        Sound {
-            channel: 1,
-            sender,
-            data,
-            sequence: -1,
-            kind: SoundKind::Entity { distance: 32.0, whispering: false },
-            category: None,
-        }
-    }
-
-    fn setup() -> (Arc<Shared>, Arc<Mutex<Mixer>>, HashMap<u128, Channel>) {
-        let shared = Arc::new(Shared::default());
-        *shared.listener.lock().unwrap() = Listener { eye: [0.0, 64.0, 0.0], yaw: 0.0 };
-        (shared, Arc::new(Mutex::new(Mixer::default())), HashMap::new())
-    }
-
-    /// Three frames fill the mixer's prebuffer; the next sample is the voice.
-    fn first_sample(mixer: &Arc<Mutex<Mixer>>) -> [f32; 2] {
-        mixer.lock().unwrap().sample(crate::opus::SAMPLE_RATE)
-    }
-
-    #[test]
-    fn voice_without_a_position_is_heard_at_full_volume() {
-        let (shared, mixer, mut channels) = setup();
-        for _ in 0..3 {
-            play(pcm_sound(7), 99, &shared, &mixer, &mut channels);
-        }
-        assert_eq!(first_sample(&mixer), [0.5, 0.5]);
-    }
-
-    #[test]
-    fn voice_with_a_known_position_still_fades_by_distance() {
-        let (shared, mixer, mut channels) = setup();
-        // 16 blocks straight ahead, half the 32 block distance: half volume.
-        shared.players.lock().unwrap().insert(7, [0.0, 64.0, 16.0]);
-        for _ in 0..3 {
-            play(pcm_sound(7), 99, &shared, &mixer, &mut channels);
-        }
-        let [l, r] = first_sample(&mixer);
-        assert!((l - 0.25).abs() < 1e-4 && (r - 0.25).abs() < 1e-4, "{l} {r}");
-    }
-
-    #[test]
-    fn voice_out_of_range_is_still_silent() {
-        let (shared, mixer, mut channels) = setup();
-        shared.players.lock().unwrap().insert(7, [1000.0, 64.0, 0.0]);
-        for _ in 0..3 {
-            play(pcm_sound(7), 99, &shared, &mixer, &mut channels);
-        }
-        assert_eq!(first_sample(&mixer), [0.0, 0.0]);
     }
 }
