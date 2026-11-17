@@ -1,6 +1,6 @@
 [package]
 name = "voicechat-engine"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2024"
 license = "MIT"
 description = "An unofficial Simple Voice Chat protocol client for Horizon: protocol, Opus and audio"
@@ -9,5 +9,8 @@ publish = false
 # Only crates in Horizon's Cargo.lock, by version requirement.
 [dependencies]
 cpal = "0.16"
-libloading = "0.8"
 ring = "0.17"
+
+# The vendored libopus in opus/ is compiled by build.rs with this crate.
+[build-dependencies]
+cc = "1"
