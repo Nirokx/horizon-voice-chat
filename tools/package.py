@@ -2,7 +2,7 @@
 """Package the mod as a source-only `.hnmod`, the file Horizon's launcher installs and builds.
 
 The archive holds `horizon-native.json` and `mixins/voicechat/` (its `.rs` and `.toml` files, the
-engine crate's included, and the vendored libopus C sources under `mixins/voicechat/engine/opus/`),
+engine crate's included, and the vendored libopus C sources under `mixins/voicechat/engine/data/opus/`),
 with fixed dates and modes, so the same sources always give the same bytes.
 `--install` also copies it into the launcher's native mods folder.
 """

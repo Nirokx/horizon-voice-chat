@@ -31,7 +31,7 @@ Both Simple Voice Chat protocols are supported: **2.6.x** (compatibility version
 releases) and **2.7** (21, the pre-release). Automatic asks with 2.6.x only, because a server can kick a
 client that asks with a version it doesn't speak. For a 2.7 server, set Settings > Protocol to 2.7.
 
-Opus is bundled with the mod (libopus 1.5.2, compiled in from `mixins/voicechat/engine/opus/`),
+Opus is bundled with the mod (libopus 1.5.2, compiled in from `mixins/voicechat/engine/data/opus/`),
 so voice chat works on Android too, with no package to install. It uses the
 default microphone and speakers.
 
@@ -71,8 +71,8 @@ reads the server's custom payloads and the other players' positions inside the g
 
 - `mixins/voicechat/engine/`: the mod's own crate (built once and cached), with its unit tests
   - `proto.rs`: Simple Voice Chat's packets, both versions; `buf.rs`: `FriendlyByteBuf`
-  - `crypt.rs`: AES-128-GCM, as `Secret` encrypts; `opus.rs`: Opus, statically linked from the vendored libopus in `opus/`; `build.rs`: compiles that libopus
-  - `opus/`: the vendored libopus 1.5.2 C sources (BSD, see `opus/COPYING`)
+  - `crypt.rs`: AES-128-GCM, as `Secret` encrypts; `opus.rs`: Opus, statically linked from the vendored libopus in `data/opus/`; `build.rs`: compiles that libopus
+  - `data/opus/`: the vendored libopus 1.5.2 C sources (BSD, see `data/opus/COPYING`)
   - `net.rs`: the UDP connection (authenticate, check, keep alive) and the mic thread
   - `mix.rs`: jitter buffers, distance and panning, resampling; `audio.rs`: microphone and speakers (cpal)
   - `ui.rs`: the menu; `labels.rs`: group names above players; `lib.rs`: the session, keys, HUD, `/vc` and settings
@@ -98,5 +98,5 @@ reads the server's custom payloads and the other players' positions inside the g
 
 MIT, see [LICENSE](LICENSE), for the parts that are this project's own work. Simple Voice Chat itself is
 not covered by this license and remains its author's, including whatever of its design the protocol
-code follows (see above). The vendored libopus in `mixins/voicechat/engine/opus/` is BSD-licensed,
-see `mixins/voicechat/engine/opus/COPYING`.
+code follows (see above). The vendored libopus in `mixins/voicechat/engine/data/opus/` is BSD-licensed,
+see `mixins/voicechat/engine/data/opus/COPYING`.

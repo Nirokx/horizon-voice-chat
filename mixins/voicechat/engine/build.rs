@@ -1,4 +1,4 @@
-//! Build the vendored libopus (see opus/README.md) into the engine, so voice
+//! Build the vendored libopus (see data/opus/README.md) into the engine, so voice
 //! chat works where no system libopus exists: Android (Starling), and any
 //! machine without the opus package installed. Only crates already in
 //! Horizon's Cargo.lock are used: `cc` for the C compiler.
@@ -151,7 +151,7 @@ const SOURCES: &[&str] = &[
 
 fn main() {
     let target = env::var("TARGET").unwrap();
-    let opus = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("opus");
+    let opus = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("data").join("opus");
     let mut build = cc::Build::new();
     build
         .include(opus.join("include"))
@@ -178,5 +178,5 @@ fn main() {
     if !target.contains("msvc") {
         println!("cargo:rustc-link-lib=m");
     }
-    println!("cargo:rerun-if-changed=opus");
+    println!("cargo:rerun-if-changed=data/opus");
 }
