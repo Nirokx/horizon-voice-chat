@@ -1,6 +1,6 @@
 [mod]
 id = "voicechat"
-version = "1.0.2"
+version = "1.0.3"
 priority = 100
 
 # Pinned: besides the native hook points it reads the server's custom payloads
